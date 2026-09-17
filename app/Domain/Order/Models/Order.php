@@ -704,6 +704,19 @@ class Order extends Model implements HasAuditTrail
      * side of the move, which is why {@see ChangeOrderStatus} writes the status before the
      * attachment in one direction and after it in the other.
      *
+     * **«بانتظار المراجعة» accepts one because it is «جديدة» seen from the other door.** An
+     * order a clerk types in is born «جديدة» and may carry the customer's file at that moment;
+     * the same order arriving from the app is born «بانتظار المراجعة» — see {@see RequestOrder},
+     * where the *only* difference is the status it opens in — and it carries the file for the
+     * same reason and by the same code path in {@see CreateOrder}. Leaving it off this list did
+     * not make requests safer, it made them impossible: every order sent from the app with a
+     * design attached was refused by {@see AddOrderDesign} before it could be reviewed, which is
+     * the one thing the designs library exists to let a customer do.
+     *
+     * The status is more cautious than «جديدة» about what the *shop* may do next — nothing has
+     * been verified yet — and that caution belongs in the transitions, not here. Artwork is not
+     * a move on the order; it is what the customer already had in hand.
+     *
      * **A different line from {@see itemsAreEditable()}, deliberately.** A quantity is a number
      * the shop floor can still act on; a design is a decision that has already been acted on.
      */
@@ -711,7 +724,12 @@ class Order extends Model implements HasAuditTrail
     {
         return in_array(
             $this->status,
-            [OrderStatus::New, OrderStatus::ReadyToPrint, OrderStatus::Designing],
+            [
+                OrderStatus::Requested,
+                OrderStatus::New,
+                OrderStatus::ReadyToPrint,
+                OrderStatus::Designing,
+            ],
             true,
         );
     }
