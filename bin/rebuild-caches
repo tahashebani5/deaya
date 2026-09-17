@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+#
+# Rebuild the framework caches after new code lands on a box.
+#
+# **This exists because leaving it out fails silently and looks like a bug in the code.** On
+# 2026-08-23 a deploy put new code on production without rebuilding them, and the box spent the
+# afternoon answering:
+#
+#   - `POST /orders/{order}/payments/write-offs` → 404 «العنصر المطلوب غير موجود», because the
+#     cached route table was written before that route existed. The controller behind it was
+#     running fine — the same responses carried its new `written_off_amount` field — so the code
+#     looked deployed and the endpoint looked missing.
+#   - «لا يمكن تجاوز 0 صور للمنتج الواحد», because the cached config predated
+#     `media.product_images` and `config()` answered null for a key whose file says 5.
+#
+# Neither leaves a trace in a log. Both look exactly like a developer's mistake, and both are
+# one command.
+#
+# **Cleared before rebuilt, and that order matters.** `optimize` overwrites the cache files it
+# knows about; a stale artefact it no longer writes — a route cache from an older framework
+# version, a compiled view of a deleted template — survives an overwrite and not a clear.
+#
+# Kept in the repository rather than only inside each server's `printing-deploy`, because that
+# script is untracked and one copy per box: the two boxes had drifted, which is how one of them
+# came to skip this. Deploy scripts should call this file.
+#
+# Usage:  bin/rebuild-caches            # uses `php` from PATH
+#         PHP_BIN=/opt/cpanel/ea-php84/root/usr/bin/php bin/rebuild-caches
+#
+# `PHP_BIN` matters on the cPanel box, where the system `php` is not the 8.4 the app runs under.
+
+set -euo pipefail
+
+PHP_BIN="${PHP_BIN:-php}"
+
+# The application root is this script's parent, so it runs correctly from any working directory
+# — a deploy script that has just `cd`ed somewhere else included.
+APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+cd "$APP_DIR"
+
+"$PHP_BIN" artisan optimize:clear
+"$PHP_BIN" artisan optimize
+
+# Said out loud, because the failure this script exists to prevent is a silent one: a deploy that
+# printed nothing about caches is exactly what the afternoon above looked like.
+echo "caches rebuilt: config, events, routes, views"
